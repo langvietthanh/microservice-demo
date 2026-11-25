@@ -1,0 +1,214 @@
+services:
+
+  # ---------- Hạ tầng ----------
+  eureka-service:
+    build: ./eureka-service
+    image: eureka-service:1.0
+    container_name: eureka-service
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8761/actuator/health | grep -q UP" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - app-net
+
+  config-service:
+    build: ./config-service
+    image: config-service:1.0
+    container_name: config-service
+    environment:
+      EUREKA_URL: http://eureka-service:8761/eureka/
+    ports:
+      - "8888:8888"
+    depends_on:
+      eureka-service:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD-SHELL", "wget -qO- http://localhost:8888/actuator/health | grep -q UP" ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks:
+      - app-net
+
+  # ---------- Database riêng cho từng service ----------
+  mysql-user:
+    image: mysql:8.0
+    container_name: mysql-user
+    environment:
+      MYSQL_ROOT_PASSWORD: Root@12345
+      MYSQL_DATABASE: user_db
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_user_data:/var/lib/mysql
+      - ./db-init/user-db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pRoot@12345" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - app-net
+
+  mysql-department:
+    image: mysql:8.0
+    container_name: mysql-department
+    environment:
+      MYSQL_ROOT_PASSWORD: Root@12345
+      MYSQL_DATABASE: department_db
+    ports:
+      - "3308:3306"
+    volumes:
+      - mysql_department_data:/var/lib/mysql
+      - ./db-init/department-db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pRoot@12345" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - app-net
+
+  # ----- MỚI: DB của auth-service -----
+  mysql-auth:
+    image: mysql:8.0
+    container_name: mysql-auth
+    environment:
+      MYSQL_ROOT_PASSWORD: Root@12345
+      MYSQL_DATABASE: auth_db # DB được tạo tự động khi container khởi động lần đầu
+      MYSQL_USER: auth_user # tài khoản riêng cho auth-service, chỉ có quyền trên auth_db
+      MYSQL_PASSWORD: auth_pass
+      TZ: Asia/Ho_Chi_Minh
+    # Dùng utf8mb4 để lưu được tiếng Việt có dấu
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    ports:
+      - "3309:3306" # máy Windows dùng cổng 3309 (3307, 3308 đã dùng cho 2 DB kia)
+    volumes:
+      - mysql_auth_data:/var/lib/mysql # giữ dữ liệu khi container bị xóa
+      - ./db-init/auth-db:/docker-entrypoint-initdb.d:ro # 01_schema.sql, 02_data.sql tự chạy ở lần đầu
+    healthcheck:
+      # Kiểm tra qua TCP (127.0.0.1) chứ không dùng "localhost": lúc đang chạy các file .sql khởi tạo,
+      # MySQL chỉ mở socket nội bộ; nếu ping qua socket sẽ báo "healthy" quá sớm và app kết nối thất bại
+      test: [ "CMD-SHELL", "mysqladmin ping -h 127.0.0.1 --protocol=tcp -uroot -p$$MYSQL_ROOT_PASSWORD --silent" ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - app-net
+
+  # ---------- Service nghiệp vụ (KHÔNG publish port) ----------
+  department-service:
+    build: ./department-service
+    image: department-service:1.0
+    container_name: department-service
+    hostname: department-service # MỚI: để trường "source" trong lỗi hiển thị tên dễ đọc (C12)
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      CONFIG_SERVER_URL: http://config-service:8888
+    depends_on:
+      config-service:
+        condition: service_healthy
+      mysql-department:
+        condition: service_healthy
+    networks:
+      - app-net
+
+  # ----- user-service: INSTANCE 1 -----
+  user-service-1:
+    build: ./user-service
+    image: user-service:1.0
+    container_name: user-service-1
+    hostname: user-service-1
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      CONFIG_SERVER_URL: http://config-service:8888
+    depends_on:
+      config-service:
+        condition: service_healthy
+      mysql-user:
+        condition: service_healthy
+      department-service:
+        condition: service_started
+    networks:
+      - app-net
+
+  # ----- user-service: INSTANCE 2 (cùng code, cùng tên service, khác container) -----
+  user-service-2:
+    build: ./user-service
+    image: user-service:1.0
+    container_name: user-service-2
+    hostname: user-service-2
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      CONFIG_SERVER_URL: http://config-service:8888
+    depends_on:
+      config-service:
+        condition: service_healthy
+      mysql-user:
+        condition: service_healthy
+      department-service:
+        condition: service_started
+    networks:
+      - app-net
+
+  # ----- MỚI: auth-service (đăng nhập, cấp token, quản lý tài khoản) -----
+  auth-service:
+    build: ./auth-service
+    image: auth-service:1.0
+    container_name: auth-service
+    hostname: auth-service
+    restart: on-failure # nếu khởi động lỗi (vd DB/Config chưa kịp sẵn sàng) thì tự chạy lại
+    environment:
+      SPRING_PROFILES_ACTIVE: docker # -> đọc thêm auth-service-docker.yml trên Config Server
+      CONFIG_SERVER_URL: http://config-service:8888
+      JWT_ACCESS_MINUTES: 15 # đổi thành 1 khi test access token hết hạn (D5)
+      JWT_REFRESH_DAYS: 7
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      config-service:
+        condition: service_healthy
+      mysql-auth:
+        condition: service_healthy # chỉ chạy khi DB đã sẵn sàng
+    networks:
+      - app-net
+
+  # ---------- Cổng vào duy nhất ----------
+  api-gateway-service:
+    build: ./api-gateway-service
+    image: api-gateway-service:1.0
+    container_name: api-gateway-service
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      CONFIG_SERVER_URL: http://config-service:8888
+    ports:
+      - "8080:8080"
+    depends_on:
+      config-service:
+        condition: service_healthy
+      user-service-1:
+        condition: service_started
+      user-service-2:
+        condition: service_started
+      department-service:
+        condition: service_started
+      auth-service:
+        # MỚI
+        condition: service_started
+    networks:
+      - app-net
+
+networks:
+  app-net:
+    name: app-net # tên cố định để compose "monitoring" nối vào được
+
+volumes:
+  mysql_user_data:
+  mysql_department_data:
+  mysql_auth_data: # MỚI

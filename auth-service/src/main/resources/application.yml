@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: auth-service            # tên đăng ký trên Eureka; Gateway gọi bằng lb://auth-service
+  config:
+    # Lấy cấu hình từ Config Server: auth-service.yml, auth-service-docker.yml
+    # và application.yml (dùng chung - chứa khóa JWT)
+    import: configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+app:
+  jwt:
+    # Chỉ auth-service dùng 2 giá trị này. Đổi nhanh bằng biến môi trường trong docker-compose.
+    # ${TÊN_BIẾN:giá_trị_mặc_định} -> ưu tiên lấy từ biến môi trường (docker compose truyền vào),
+    # nếu không có thì dùng giá trị mặc định (khi chạy app trực tiếp trên máy)
+    access-token-minutes: ${JWT_ACCESS_MINUTES:15}    # access token sống 15 phút
+    refresh-token-days: ${JWT_REFRESH_DAYS:7}         # refresh token sống 7 ngày
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/      # chạy trong Docker sẽ bị auth-service-docker.yml ghi đè

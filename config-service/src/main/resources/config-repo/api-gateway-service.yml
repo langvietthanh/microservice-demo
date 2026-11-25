@@ -1,0 +1,21 @@
+spring:
+  cloud:
+    gateway:
+      routes:
+        # (bài trước) user-service: Gateway tự chia tải cho user-service-1 và user-service-2
+        - id: user-service
+          uri: lb://user-service
+          predicates:
+            - Path=/api/users/**
+
+        # (bài trước) department-service
+        - id: department-service
+          uri: lb://department-service
+          predicates:
+            - Path=/api/departments/**
+
+        # MỚI: auth-service (đăng nhập, đổi token, đăng xuất + quản lý tài khoản)
+        - id: auth-service
+          uri: lb://auth-service
+          predicates:
+            - Path=/api/auth/**,/api/accounts/**

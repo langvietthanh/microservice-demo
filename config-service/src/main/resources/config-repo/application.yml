@@ -1,0 +1,15 @@
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    prefer-ip-address: true
+
+# ============================================================
+# Cấu hình DÙNG CHUNG: Config Server gửi file này cho MỌI service
+# (auth-service, api-gateway-service, user-service, department-service...)
+# ============================================================
+app:
+  jwt:
+    # Khóa bí mật ký/kiểm tra JWT (chuỗi Base64, tối thiểu 32 byte)
+    secret: 6Pr9/U5s61/UL4ntVZRAGHYVzbddUBpj9jdtFUDCmsxszZ+Yb7Hl58/Gt8U18Ewe

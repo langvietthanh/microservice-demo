@@ -1,0 +1,23 @@
+server:
+  port: 8083
+
+spring:
+  datasource:
+    # Khi chạy trực tiếp trên máy (không Docker): MySQL ở localhost:3309
+    url: jdbc:mysql://localhost:3309/auth_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Ho_Chi_Minh
+    username: auth_user
+    password: auth_pass
+  jpa:
+    hibernate:
+      ddl-auto: validate      # bảng do file SQL tạo; Hibernate chỉ kiểm tra entity có khớp với bảng không
+    open-in-view: false
+    show-sql: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus   # mở /actuator/prometheus cho Prometheus kéo số liệu
+  metrics:
+    tags:
+      application: auth-service            # nhãn để lọc trên Grafana (dashboard 4701)

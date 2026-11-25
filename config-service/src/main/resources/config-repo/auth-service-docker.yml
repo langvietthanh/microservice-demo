@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    # Trong mạng Docker: gọi DB bằng tên container "mysql-auth" và cổng 3306 (không phải localhost:3309)
+    url: jdbc:mysql://mysql-auth:3306/auth_db?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Ho_Chi_Minh
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-service:8761/eureka/
